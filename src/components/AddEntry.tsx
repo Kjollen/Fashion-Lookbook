@@ -145,7 +145,7 @@ export default function AddEntry({ onAdd, onClose, existingBrands = [], existing
               <img
                 src={photo}
                 alt="Preview"
-                className="w-full max-h-64 object-contain bg-black rounded-xl"
+                className="w-full max-h-96 object-contain bg-black rounded-xl aspect-[3/4]"
               />
               <button
                 onClick={() => setPhoto('')}
