@@ -1,78 +1,62 @@
+import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, query, where, orderBy } from 'firebase/firestore';
+import { ref, uploadString, getDownloadURL, deleteObject } from 'firebase/storage';
+import { db, storage } from './firebase';
 import { LookEntry } from './types';
 
-const DB_NAME = 'fashion-lookbook';
-const DB_VERSION = 1;
-const STORE_NAME = 'looks';
+const LOOKS_COLLECTION = 'looks';
 
-function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-        store.createIndex('category', 'category', { unique: false });
-        store.createIndex('createdAt', 'createdAt', { unique: false });
-      }
-    };
-  });
+async function uploadPhoto(photoData: string, entryId: string, userId: string): Promise<string> {
+  const storageRef = ref(storage, `users/${userId}/looks/${entryId}.jpg`);
+  await uploadString(storageRef, photoData, 'data_url');
+  return await getDownloadURL(storageRef);
 }
 
-export async function getAllEntries(): Promise<LookEntry[]> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const store = tx.objectStore(STORE_NAME);
-    const request = store.getAll();
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => {
-      const results = request.result as LookEntry[];
-      resolve(results.sort((a, b) => b.createdAt - a.createdAt));
-    };
-    tx.oncomplete = () => db.close();
-  });
+async function deletePhoto(entryId: string, userId: string): Promise<void> {
+  try {
+    const storageRef = ref(storage, `users/${userId}/looks/${entryId}.jpg`);
+    await deleteObject(storageRef);
+  } catch (err) {
+    console.warn('Failed to delete photo:', err);
+  }
 }
 
-export async function addEntry(entry: LookEntry): Promise<void> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    store.put(entry);
-    tx.onerror = () => reject(tx.error);
-    tx.oncomplete = () => {
-      db.close();
-      resolve();
-    };
-  });
+export async function getAllEntries(userId: string): Promise<LookEntry[]> {
+  const q = query(
+    collection(db, LOOKS_COLLECTION),
+    where('userId', '==', userId),
+    orderBy('createdAt', 'desc')
+  );
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({
+    id: doc.id,
+    ...doc.data(),
+  })) as LookEntry[];
 }
 
-export async function updateEntry(entry: LookEntry): Promise<void> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    store.put(entry);
-    tx.onerror = () => reject(tx.error);
-    tx.oncomplete = () => {
-      db.close();
-      resolve();
-    };
+export async function addEntry(entry: Omit<LookEntry, 'id'>, userId: string): Promise<LookEntry> {
+  const photoUrl = await uploadPhoto(entry.photo, `temp-${Date.now()}`, userId);
+  const docRef = await addDoc(collection(db, LOOKS_COLLECTION), {
+    ...entry,
+    photo: photoUrl,
+    userId,
   });
+  const finalPhotoUrl = await uploadPhoto(entry.photo, docRef.id, userId);
+  await updateDoc(docRef, { photo: finalPhotoUrl });
+  return {
+    id: docRef.id,
+    ...entry,
+    photo: finalPhotoUrl,
+    userId,
+  } as LookEntry;
 }
 
-export async function deleteEntry(id: string): Promise<void> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    store.delete(id);
-    tx.onerror = () => reject(tx.error);
-    tx.oncomplete = () => {
-      db.close();
-      resolve();
-    };
-  });
+export async function updateEntry(entry: LookEntry, userId: string): Promise<void> {
+  const docRef = doc(db, LOOKS_COLLECTION, entry.id);
+  const { id, ...data } = entry;
+  await updateDoc(docRef, data);
+}
+
+export async function deleteEntry(id: string, userId: string): Promise<void> {
+  await deleteDoc(doc(db, LOOKS_COLLECTION, id));
+  await deletePhoto(id, userId);
 }
