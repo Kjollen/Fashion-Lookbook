@@ -190,7 +190,14 @@ function App() {
         </div>
       )}
 
-      {showAdd && <AddEntry onAdd={handleAdd} onClose={() => setShowAdd(false)} />}
+      {showAdd && (
+  <AddEntry
+    onAdd={handleAdd}
+    onClose={() => setShowAdd(false)}
+    existingBrands={[...new Set(entries.map(e => e.brand).filter(Boolean))]}
+    existingSeasons={[...new Set(entries.map(e => e.season).filter(Boolean))]}
+  />
+)}
       {selectedEntry && (
         <EntryModal
           entry={selectedEntry}
