@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Category, CATEGORY_INFO } from '../types';
 
 interface Props {
-  onAdd: ( {
+  onAdd: (data: {
     photo: string;
     category: Category;
     brand: string;
