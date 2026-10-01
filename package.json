@@ -7,10 +7,10 @@
     "build": "vite build",
     "preview": "vite preview"
   },
-  "dependencies": {
+ "dependencies": {
   "react": "^18.2.0",
   "react-dom": "^18.2.0",
-  "@supabase/supabase-js",
+  "@supabase/supabase-js": "^2.39.0",
   "jszip": "^3.10.2",
   "file-saver": "^2.0.5"
 },
