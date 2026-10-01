@@ -1,10 +1,9 @@
 import { useState } from 'react';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { auth } from '../firebase';
+import { supabase } from '../supabase';
 
 interface Props {
   onClose: () => void;
-  onAuth: () => void;
+  onAuth: (email: string) => void;
 }
 
 export default function AuthModal({ onClose, onAuth }: Props) {
@@ -20,20 +19,16 @@ export default function AuthModal({ onClose, onAuth }: Props) {
     setLoading(true);
     try {
       if (mode === 'register') {
-        await createUserWithEmailAndPassword(auth, email, password);
+        const { error } = await supabase.auth.signUp({ email, password });
+        if (error) throw error;
       } else {
-        await signInWithEmailAndPassword(auth, email, password);
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
       }
-      onAuth();
+      onAuth(email);
       onClose();
     } catch (err: any) {
-      const code = err.code;
-      if (code === 'auth/email-already-in-use') setError('Этот email уже зарегистрирован');
-      else if (code === 'auth/invalid-email') setError('Некорректный email');
-      else if (code === 'auth/weak-password') setError('Пароль должен быть не менее 6 символов');
-      else if (code === 'auth/invalid-credential') setError('Неверный email или пароль');
-      else if (code === 'auth/user-not-found') setError('Пользователь не найден');
-      else setError('Что-то пошло не попробуй ещё раз');
+      setError(err.message || 'Что-то пошло не так');
     } finally {
       setLoading(false);
     }
@@ -75,5 +70,3 @@ export default function AuthModal({ onClose, onAuth }: Props) {
     </div>
   );
 }
-
-export { signOut, auth };
