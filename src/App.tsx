@@ -65,14 +65,25 @@ function App() {
     notes: string;
     tags: string[];
   }) => {
-    if (!userEmail) return;
-    const entry = await addEntry({
-      id: crypto.randomUUID(),
-      ...data,
-      createdAt: Date.now(),
-    }, userEmail);
-    setEntries(prev => [entry, ...prev]);
-    setShowAdd(false);
+    if (!userEmail) {
+      alert('Не авторизован!');
+      return;
+    }
+    
+    try {
+      const entry = await addEntry({
+        id: crypto.randomUUID(),
+        ...data,
+        createdAt: Date.now(),
+      }, userEmail);
+      
+      setEntries(prev => [entry, ...prev]);
+      setShowAdd(false);
+      alert('✅ Сохранено!');
+    } catch (err: any) {
+      console.error('Ошибка:', err);
+      alert('❌ Ошибка сохранения: ' + (err.message || 'неизвестная ошибка'));
+    }
   };
 
   const handleUpdate = async (updated: LookEntry) => {
