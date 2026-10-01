@@ -56,7 +56,7 @@ function App() {
     }
   };
 
-  const handleAdd = async ( {
+  const handleAdd = async (data: {
     photo: string;
     category: Category;
     brand: string;
