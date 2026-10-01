@@ -77,7 +77,13 @@ export default function AddEntry({ onAdd, onClose, existingBrands = [], existing
   };
 
   const handleSubmit = () => {
-    if (!photo) return;
+    console.log('Кнопка нажата!');
+    console.log('Photo:', photo ? 'есть' : 'пусто');
+    console.log('Category:', category);
+    if (!photo) {
+      alert('Фото не загружено!');
+      return;
+    }
     onAdd({
       photo,
       category,
