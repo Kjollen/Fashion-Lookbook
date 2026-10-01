@@ -38,10 +38,14 @@ function App() {
   const loadEntries = async () => {
     if (!user) return;
     try {
+      setLoading(true);
       const data = await getAllEntries(user.uid);
       setEntries(data);
     } catch (err) {
       console.error('Failed to load entries:', err);
+      setEntries([]);
+    } finally {
+      setLoading(false);
     }
   };
 
