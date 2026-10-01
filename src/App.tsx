@@ -1,7 +1,5 @@
 import { useState, useEffect } from 'react';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { User } from 'firebase/auth';
-import { auth } from './firebase';
+import { supabase } from './supabase';
 import { LookEntry, Category } from './types';
 import { getAllEntries, addEntry, updateEntry, deleteEntry } from './db';
 import Gallery from './components/Gallery';
@@ -11,7 +9,7 @@ import AuthModal from './components/AuthModal';
 import DeployGuide from './components/DeployGuide';
 
 function App() {
-  const [user, setUser] = useState<User | null>(null);
+  const [userEmail, setUserEmail] = useState<string>('');
   const [entries, setEntries] = useState<LookEntry[]>([]);
   const [showAdd, setShowAdd] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<LookEntry | null>(null);
@@ -20,36 +18,45 @@ function App() {
   const [showGuide, setShowGuide] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.email) {
+        setUserEmail(session.user.email);
+      }
       setLoading(false);
     });
-    return () => unsubscribe();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user?.email) {
+        setUserEmail(session.user.email);
+      } else {
+        setUserEmail('');
+        setEntries([]);
+      }
+      setLoading(false);
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
-    if (user) {
+    if (userEmail) {
       loadEntries();
-    } else {
-      setEntries([]);
     }
-  }, [user]);
+  }, [userEmail]);
 
   const loadEntries = async () => {
-    if (!user) return;
+    if (!userEmail) return;
     try {
       setLoading(true);
-      const data = await getAllEntries(user.uid);
+      const data = await getAllEntries(userEmail);
       setEntries(data);
     } catch (err) {
-      console.error('Failed to load entries:', err);
+      console.error('Failed to load:', err);
       setEntries([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAdd = async (data: {
+  const handleAdd = async ( {
     photo: string;
     category: Category;
     brand: string;
@@ -58,33 +65,63 @@ function App() {
     notes: string;
     tags: string[];
   }) => {
-    if (!user) return;
+    if (!userEmail) return;
     const entry = await addEntry({
+      id: crypto.randomUUID(),
       ...data,
       createdAt: Date.now(),
-    }, user.uid);
+    }, userEmail);
     setEntries(prev => [entry, ...prev]);
     setShowAdd(false);
   };
 
   const handleUpdate = async (updated: LookEntry) => {
-    if (!user) return;
-    await updateEntry(updated, user.uid);
+    if (!userEmail) return;
+    await updateEntry(updated, userEmail);
     setEntries(prev => prev.map(e => e.id === updated.id ? updated : e));
     setSelectedEntry(updated);
   };
 
   const handleDelete = async (id: string) => {
-    if (!user) return;
-    await deleteEntry(id, user.uid);
+    await deleteEntry(id);
     setEntries(prev => prev.filter(e => e.id !== id));
     setSelectedEntry(null);
   };
 
   const handleSignOut = async () => {
-    await signOut(auth);
-    setUser(null);
+    await supabase.auth.signOut();
+    setUserEmail('');
     setEntries([]);
+  };
+
+  const handleExport = () => {
+    const dataStr = JSON.stringify(entries, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `fashion-lookbook-backup-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !userEmail) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const imported = JSON.parse(event.target?.result as string) as LookEntry[];
+        for (const entry of imported) {
+          await addEntry(entry, userEmail);
+        }
+        await loadEntries();
+        alert(`Импортировано ${imported.length} образов!`);
+      } catch (err) {
+        alert('Ошибка импорта: неверный формат файла');
+      }
+    };
+    reader.readAsText(file);
   };
 
   const stats = {
@@ -105,7 +142,7 @@ function App() {
     );
   }
 
-  if (!user) {
+  if (!userEmail) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950/30 to-slate-950 flex items-center justify-center p-4">
         <div className="text-center max-w-md">
@@ -126,7 +163,7 @@ function App() {
             Создай аккаунт чтобы сохранять образы в облаке
           </p>
         </div>
-        {showAuth && <AuthModal onClose={() => setShowAuth(false)} onAuth={() => {}} />}
+        {showAuth && <AuthModal onClose={() => setShowAuth(false)} onAuth={(email) => setUserEmail(email)} />}
       </div>
     );
   }
@@ -141,10 +178,24 @@ function App() {
                 ✨ Fashion Lookbook
               </h1>
               <p className="text-xs text-gray-500 mt-0.5">
-                {user.email} • Облако
+                {userEmail} • Облако
               </p>
             </div>
             <div className="flex items-center gap-2">
+              <button
+                onClick={handleExport}
+                className="px-3 py-2 border border-slate-700 hover:border-green-500/50 hover:bg-slate-800/50 rounded-full text-sm transition text-gray-400 hover:text-green-400"
+                title="Экспорт данных (бэкап)"
+              >
+                💾
+              </button>
+              <label
+                className="px-3 py-2 border border-slate-700 hover:border-blue-500/50 hover:bg-slate-800/50 rounded-full text-sm transition text-gray-400 hover:text-blue-400 cursor-pointer"
+                title="Импорт данных"
+              >
+                📥
+                <input type="file" accept=".json" onChange={handleImport} className="hidden" />
+              </label>
               <button
                 onClick={() => setShowGuide(true)}
                 className="px-3 py-2 border border-slate-700 hover:border-purple-500/50 hover:bg-slate-800/50 rounded-full text-sm transition flex items-center gap-1.5"
@@ -183,10 +234,19 @@ function App() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-6">
-        <Gallery entries={entries} onSelect={setSelectedEntry} />
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <div className="text-center">
+              <div className="text-4xl mb-3 animate-pulse">✨</div>
+              <p className="text-gray-500 text-sm">Загрузка...</p>
+            </div>
+          </div>
+        ) : (
+          <Gallery entries={entries} onSelect={setSelectedEntry} />
+        )}
       </main>
 
-      {entries.length === 0 && (
+      {entries.length === 0 && !loading && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-800 border border-slate-700 rounded-2xl px-5 py-3 shadow-xl max-w-sm text-center">
           <p className="text-sm text-gray-300">
             Нажми <span className="text-purple-400 font-medium">+ Добавить образ</span> чтобы начать 👗
@@ -195,13 +255,13 @@ function App() {
       )}
 
       {showAdd && (
-  <AddEntry
-    onAdd={handleAdd}
-    onClose={() => setShowAdd(false)}
-    existingBrands={[...new Set(entries.map(e => e.brand).filter(Boolean))]}
-    existingSeasons={[...new Set(entries.map(e => e.season).filter(Boolean))]}
-  />
-)}
+        <AddEntry
+          onAdd={handleAdd}
+          onClose={() => setShowAdd(false)}
+          existingBrands={[...new Set(entries.map(e => e.brand).filter(Boolean))]}
+          existingSeasons={[...new Set(entries.map(e => e.season).filter(Boolean))]}
+        />
+      )}
       {selectedEntry && (
         <EntryModal
           entry={selectedEntry}
@@ -211,7 +271,7 @@ function App() {
         />
       )}
       {showGuide && <DeployGuide onClose={() => setShowGuide(false)} />}
-      {showAuth && <AuthModal onClose={() => setShowAuth(false)} onAuth={() => {}} />}
+      {showAuth && <AuthModal onClose={() => setShowAuth(false)} onAuth={(email) => setUserEmail(email)} />}
     </div>
   );
 }
